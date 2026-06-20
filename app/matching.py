@@ -1,36 +1,48 @@
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+from app.threshold import validate_threshold
+from app.vectorizer import create_student_vector, create_job_vector
 
 # Load datasets
 students = pd.read_csv("data/students.csv")
 jobs = pd.read_csv("data/jobs.csv")
 
-skills = ["python", "java", "sql", "react", "machine_learning"]
-
-student_features = students[skills]
-job_features = jobs[skills]
-
-similarity = cosine_similarity(student_features, job_features)
-
 print("\n========== AI Job Recommendation ==========\n")
 
-for i, student in students.iterrows():
+for _, student in students.iterrows():
 
-    best_job_index = similarity[i].argmax()
+    best_score = -1
+    best_job = None
+    best_reason = ""
 
-    best_job = jobs.iloc[best_job_index]
+    for _, job in jobs.iterrows():
 
-    best_score = similarity[i][best_job_index] * 100
+        # Check Threshold
+        eligible, reason = validate_threshold(student, job)
+
+        if not eligible:
+            continue
+
+        # Create vectors
+        student_vector = create_student_vector(student).reshape(1, -1)
+        job_vector = create_job_vector(job).reshape(1, -1)
+
+        # Cosine Similarity
+        score = cosine_similarity(student_vector, job_vector)[0][0] * 100
+
+        if score > best_score:
+            best_score = score
+            best_job = job
+            best_reason = reason
 
     print(f"Student : {student['name']}")
-    print(f"Recommended Company : {best_job['company']}")
-    print(f"Match Score : {best_score:.2f}%")
 
-    print("\nReason:")
-
-    for skill in skills:
-
-        if best_job[skill] == 1:
-            print(f"✔ {skill.capitalize()} matched")
+    if best_job is not None:
+        print(f"Recommended Company : {best_job['company']}")
+        print(f"Role : {best_job['role']}")
+        print(f"Match Score : {best_score:.2f}%")
+        print(f"Reason : {best_reason}")
+    else:
+        print("No suitable job found")
 
     print("-" * 50)

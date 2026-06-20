@@ -1,6 +1,9 @@
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 
+from app.threshold import validate_threshold
+from app.vectorizer import create_student_vector, create_job_vector
+
 # ============================================
 # Load Datasets
 # ============================================
@@ -8,50 +11,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 students = pd.read_csv("data/students.csv")
 jobs = pd.read_csv("data/jobs.csv")
 
-# ============================================
-# Feature Columns
-# ============================================
-
-SKILL_COLUMNS = [
-    "python",
-    "java",
-    "sql",
-    "react",
-    "machine_learning",
-    "communication"
-]
 
 # ============================================
-# Feature Matrices
-# ============================================
-
-student_features = students[SKILL_COLUMNS]
-job_features = jobs[SKILL_COLUMNS]
-
-# ============================================
-# Cosine Similarity Matrix
-# ============================================
-
-similarity_matrix = cosine_similarity(student_features, job_features)
-
-
-# ============================================
-# Match Function
+# Match One Student with One Job
 # ============================================
 
 def get_match(student_id: int, job_id: int):
 
-    # ----------------------------------------
-    # Find Student
-    # ----------------------------------------
     student_df = students[students["student_id"] == student_id]
 
     if student_df.empty:
         raise ValueError("Student Not Found")
 
-    # ----------------------------------------
-    # Find Job
-    # ----------------------------------------
     job_df = jobs[jobs["job_id"] == job_id]
 
     if job_df.empty:
@@ -60,83 +31,53 @@ def get_match(student_id: int, job_id: int):
     student = student_df.iloc[0]
     job = job_df.iloc[0]
 
-    student_index = student_df.index[0]
-    job_index = job_df.index[0]
+    # Threshold Validation
+    eligible, reason = validate_threshold(student, job)
 
-    # ----------------------------------------
-    # Calculate Match Score
-    # ----------------------------------------
-    score = round(similarity_matrix[student_index][job_index] * 100, 2)
+    if not eligible:
 
-    # ----------------------------------------
-    # Recommendation Status
-    # ----------------------------------------
-    if score >= 90:
-        status = "⭐⭐ Highly Recommended"
-    elif score >= 75:
-        status = "✅ Recommended"
-    elif score >= 60:
-        status = "⚠ Average Match"
-    else:
-        status = "❌ Not Recommended"
+        return {
+            "student_id": student_id,
+            "job_id": job_id,
+            "eligible": False,
+            "match_score": 0,
+            "reason": reason
+        }
 
-    # ----------------------------------------
-    # Explainable AI
-    # ----------------------------------------
-    reasons = []
+    # Create Vectors
+    student_vector = create_student_vector(student).reshape(1, -1)
+    job_vector = create_job_vector(job).reshape(1, -1)
 
-    # Skill Matching
-    for skill in SKILL_COLUMNS:
+    # Cosine Similarity
+    score = round(
+        cosine_similarity(student_vector, job_vector)[0][0] * 100,
+        2
+    )
 
-        if job[skill] == 1:
-
-            if student[skill] >= 70:
-                reasons.append(f"{skill.replace('_', ' ').title()} matched")
-            else:
-                reasons.append(f"{skill.replace('_', ' ').title()} needs improvement")
-
-    # Experience Check
-    if student["experience"] >= job["experience"]:
-        reasons.append("Experience requirement satisfied")
-    else:
-        reasons.append("Experience below requirement")
-
-    # Academic Performance
-    if student["cgpa"] >= 8.5:
-        reasons.append("Excellent academic performance")
-    elif student["cgpa"] >= 7.5:
-        reasons.append("Good academic performance")
-    else:
-        reasons.append("Academic performance needs improvement")
-
-    # Communication Skills
-    if student["communication"] >= 85:
-        reasons.append("Excellent communication skills")
-    elif student["communication"] >= 70:
-        reasons.append("Good communication skills")
-    else:
-        reasons.append("Communication skills need improvement")
-
-    # Overall Recommendation
-    if score >= 90:
-        reasons.append("Strong overall fit for this job")
-    elif score >= 75:
-        reasons.append("Suitable candidate with minor improvements needed")
-    else:
-        reasons.append("Candidate requires additional skill development")
-
-    # ----------------------------------------
-    # API Response
-    # ----------------------------------------
     return {
+
         "student_id": int(student["student_id"]),
+
         "student_name": student["name"],
+
         "job_id": int(job["job_id"]),
+
         "company": job["company"],
+
+        "role": job["role"],
+
+        "eligible": True,
+
         "match_score": score,
-        "status": status,
-        "reason": reasons
+
+        "reason": reason
+
     }
+
+
+# ============================================
+# Rank Candidates for One Job
+# ============================================
 
 def rank_candidates(job_id: int):
 
@@ -145,25 +86,24 @@ def rank_candidates(job_id: int):
     if job_df.empty:
         raise ValueError("Job Not Found")
 
-    job_index = job_df.index[0]
+    job = job_df.iloc[0]
 
     rankings = []
 
-    for index, student in students.iterrows():
+    for _, student in students.iterrows():
 
-        score = round(similarity_matrix[index][job_index] * 100, 2)
+        eligible, reason = validate_threshold(student, job)
 
-        if score >= 90:
-            status = "⭐⭐ Highly Recommended"
+        if not eligible:
+            continue
 
-        elif score >= 75:
-            status = "✅ Recommended"
+        student_vector = create_student_vector(student).reshape(1, -1)
+        job_vector = create_job_vector(job).reshape(1, -1)
 
-        elif score >= 60:
-            status = "⚠ Average Match"
-
-        else:
-            status = "❌ Not Recommended"
+        score = round(
+            cosine_similarity(student_vector, job_vector)[0][0] * 100,
+            2
+        )
 
         rankings.append({
 
@@ -173,7 +113,7 @@ def rank_candidates(job_id: int):
 
             "match_score": score,
 
-            "status": status
+            "reason": reason
 
         })
 
@@ -187,8 +127,8 @@ def rank_candidates(job_id: int):
 
     )
 
-    for i, candidate in enumerate(rankings, start=1):
+    for index, candidate in enumerate(rankings, start=1):
 
-        candidate["rank"] = i
+        candidate["rank"] = index
 
     return rankings
