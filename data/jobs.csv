@@ -1,0 +1,6 @@
+job_id,company,role,python,sql,machine_learning,deep_learning
+1,Google,AI Engineer,85,80,85,70
+2,Microsoft,ML Engineer,80,75,80,65
+3,Amazon,Data Scientist,75,70,78,60
+4,Infosys,Python Developer,70,65,60,50
+5,TCS,AI Intern,65,60,70,55
